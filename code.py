@@ -36,7 +36,7 @@ except ImportError:
     raise
 
 # How often to query fr24 - quick enough to catch a plane flying over, not so often as to cause any issues, hopefully
-QUERY_DELAY=30
+QUERY_DELAY=10
 #Area to search for flights, see secrets file
 BOUNDS_BOX=secrets["bounds_box"]
 
@@ -44,17 +44,18 @@ BOUNDS_BOX=secrets["bounds_box"]
 ROW_ONE_COLOUR=0xEE82EE
 ROW_TWO_COLOUR=0x4B0082
 ROW_THREE_COLOUR=0xFFA500
+ALTITUDE_COLOUR=0xADA500
 PLANE_COLOUR=0x4B0082
 # Time in seconds to wait between scrolling one label and the next
 PAUSE_BETWEEN_LABEL_SCROLLING=3
 # speed plane animation will move - pause time per pixel shift in seconds
 PLANE_SPEED=0.04
 # speed text labels will move - pause time per pixel shift in seconds
-TEXT_SPEED=0.04
+TEXT_SPEED=0.03
 
 #URLs
 FLIGHT_SEARCH_HEAD="https://data-cloud.flightradar24.com/zones/fcgi/feed.js?bounds="
-FLIGHT_SEARCH_TAIL="&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=0&maxage=14400&gliders=0&stats=0&ems=1&limit=1"
+FLIGHT_SEARCH_TAIL="&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=0&maxage=14400&gliders=0&stats=0&ems=0&limit=1"
 FLIGHT_SEARCH_URL=FLIGHT_SEARCH_HEAD+BOUNDS_BOX+FLIGHT_SEARCH_TAIL
 # Deprecated URL used to return less JSON than the long details URL, but can give ambiguous results
 # FLIGHT_DETAILS_HEAD="https://api.flightradar24.com/common/v1/flight/list.json?&fetchBy=flight&page=1&limit=1&maxage=14400&query="
@@ -103,8 +104,13 @@ planeBmp[1,5]=planeBmp[2,5]=planeBmp[3,5]=planeBmp[4,5]=planeBmp[5,5]=planeBmp[6
 planeBmp[9,6]=planeBmp[5,6]=planeBmp[4,6]=planeBmp[3,6]=1
 planeBmp[6,9]=planeBmp[6,8]=planeBmp[5,8]=planeBmp[4,7]=planeBmp[5,7]=planeBmp[6,7]=1
 planeTg= displayio.TileGrid(planeBmp, pixel_shader=planePalette)
-planeG=displayio.Group(x=matrixportal.display.width+12,y=10)
-planeG.append(planeTg)
+planeArrive=displayio.Group(x=matrixportal.display.width+12,y=10)
+planeArrive.append(planeTg)
+
+planeTg= displayio.TileGrid(planeBmp, pixel_shader=planePalette)
+planeTg.flip_x = True
+planeDepart=displayio.Group(x=matrixportal.display.width+12,y=10)
+planeDepart.append(planeTg)
 
 # We can fit three rows of text on a panel, so one label for each. We'll change their text as needed
 label1 = adafruit_display_text.label.Label(
@@ -128,6 +134,13 @@ label3 = adafruit_display_text.label.Label(
 label3.x = 1
 label3.y = 25
 
+label4 = adafruit_display_text.label.Label(
+    FONT,
+    color=ALTITUDE_COLOUR,
+    text="")
+label4.x = 36
+label4.y = 25
+
 # text strings to go in the labels
 label1_short=''
 label1_long=''
@@ -141,13 +154,25 @@ g = displayio.Group()
 g.append(label1)
 g.append(label2)
 g.append(label3)
+g.append(label4)
 matrixportal.display.show(g)
 
 # Scroll the plane bitmap right to left (same direction as scrolling text)
-def plane_animation():
-    matrixportal.display.show(planeG)
-    for i in range(matrixportal.display.width+24,-12,-1):
-            planeG.x=i
+def plane_animation(depart=True):
+
+    if depart:
+        planeToShow = planeDepart
+        start = -12
+        end = matrixportal.display.width+24
+        step = 1
+    else:
+        planeToShow = planeArrive
+        start = matrixportal.display.width+24
+        end = -12
+        step = -1
+    matrixportal.display.show(planeToShow)
+    for i in range(start, end, step):
+            planeToShow.x=i
             w.feed()
             time.sleep(PLANE_SPEED)
             #matrixportal.display.refresh(minimum_frames_per_second=0)
@@ -161,7 +186,7 @@ def scroll(line):
         w.feed()
         time.sleep(TEXT_SPEED)
         #matrixportal.display.refresh(minimum_frames_per_second=0)
-        
+
 
 # Populate the labels, then scroll longer versions of the text
 def display_flight():
@@ -170,32 +195,36 @@ def display_flight():
     label1.text=label1_short
     label2.text=label2_short
     label3.text=label3_short
+    label4.text=label4_short
     time.sleep(PAUSE_BETWEEN_LABEL_SCROLLING)
-    
+
     label1.x=matrixportal.display.width+1
     label1.text=label1_long
     scroll(label1)
     label1.text=label1_short
     label1.x=1
     time.sleep(PAUSE_BETWEEN_LABEL_SCROLLING)
-    
+
     label2.x=matrixportal.display.width+1
     label2.text=label2_long
     scroll(label2)
     label2.text=label2_short
     label2.x=1
     time.sleep(PAUSE_BETWEEN_LABEL_SCROLLING)
-    
+
     label3.x=matrixportal.display.width+1
     label3.text=label3_long
+    temp_label4 = label4.text
+    label4.text = ''
     scroll(label3)
     label3.text=label3_short
+    label4.text = temp_label4
     label3.x=1
     time.sleep(PAUSE_BETWEEN_LABEL_SCROLLING)
 
 # Blank the display when a flight is no longer found
 def clear_flight():
-    label1.text=label2.text=label3.text=""
+    label1.text=label2.text=label3.text=label4.text=""
 
 
 # Take the flight ID we found with a search, and load details about it
@@ -215,7 +244,9 @@ def get_flight_details(fn):
 
     # Get the URL response one chunk at a time
     try:
-        response=requests.get(url=FLIGHT_LONG_DETAILS_HEAD+fn,headers=rheaders)
+        flight_details_url = FLIGHT_LONG_DETAILS_HEAD+fn
+        print("Getting flight details at: " + flight_details_url)
+        response=requests.get(url=flight_details_url,headers=rheaders)
         for chunk in response.iter_content(chunk_size=chunk_length):
 
             # if the chunk will fit in the byte array, add it
@@ -248,7 +279,7 @@ def get_flight_details(fn):
                     # Stop reading chunks
                     print("Details lookup saved "+str(trail_end)+" bytes.")
                     return True
-    # Handle occasional URL fetching errors            
+    # Handle occasional URL fetching errors
     except (RuntimeError, OSError, HttpError) as e:
             print("Error--------------------------------------------------")
             print(e)
@@ -257,7 +288,7 @@ def get_flight_details(fn):
     #If we got here we got through all the JSON without finding the right trail entries
     print("Failed to find a valid trail entry in JSON")
     return False
-    
+
 
 # Look at the byte array that fetch_details saved into and extract any fields we want
 def parse_details_json():
@@ -271,8 +302,15 @@ def parse_details_json():
         # Some available values from the JSON. Put the details URL and a flight ID in your browser and have a look for more.
 
         flight_number=long_json["identification"]["number"]["default"]
-        #print(flight_number)
         flight_callsign=long_json["identification"]["callsign"]
+        
+        if flight_number:
+            print("Flight is called "+flight_number)
+        else:
+            print("No flight number, callsign is "+flight_callsign)
+            print("No number for this flight. Skipping")
+            return False
+                
         aircraft_code=long_json["aircraft"]["model"]["code"]
         aircraft_model=long_json["aircraft"]["model"]["text"]
         #aircraft_registration=long_json["aircraft"]["registration"]
@@ -280,6 +318,7 @@ def parse_details_json():
         #airline_short=long_json["airline"]["short"]
         airport_origin_name=long_json["airport"]["origin"]["name"]
         airport_origin_name=airport_origin_name.replace(" Airport","")
+        airport_origin_name=airport_origin_name.replace(" International","")
         airport_origin_code=long_json["airport"]["origin"]["code"]["iata"]
         #airport_origin_country=long_json["airport"]["origin"]["position"]["country"]["name"]
         #airport_origin_country_code=long_json["airport"]["origin"]["position"]["country"]["code"]
@@ -287,6 +326,7 @@ def parse_details_json():
         #airport_origin_terminal=long_json["airport"]["origin"]["info"]["terminal"]
         airport_destination_name=long_json["airport"]["destination"]["name"]
         airport_destination_name=airport_destination_name.replace(" Airport","")
+        airport_destination_name=airport_destination_name.replace(" International","")
         airport_destination_code=long_json["airport"]["destination"]["code"]["iata"]
         #airport_destination_country=long_json["airport"]["destination"]["position"]["country"]["name"]
         #airport_destination_country_code=long_json["airport"]["destination"]["position"]["country"]["code"]
@@ -298,18 +338,17 @@ def parse_details_json():
         #time_estimated_arrival=long_json["time"]["estimated"]["arrival"]
         #latitude=long_json["trail"][0]["lat"]
         #longitude=long_json["trail"][0]["lng"]
-        #altitude=long_json["trail"][0]["alt"]
+        altitude=long_json["trail"][0]["alt"]
         #speed=long_json["trail"][0]["spd"]
-        #heading=long_json["trail"][0]["hd"]
+        heading=long_json["trail"][0]["hd"]
 
-
-        if flight_number:
-            print("Flight is called "+flight_number)
-        elif flight_callsign:
-            print("No flight number, callsign is "+flight_callsign)
+        altitude = 2500
+        if altitude > 10000:
+            altitude = str(round(altitude / 1000)) + 'k'
+            label4.x = 32
         else:
-            print("No number or callsign for this flight.")
-
+            altitude = str(round(altitude / 1000, 1)) + 'k'
+            label4.x = 30
 
         # Set up to 6 of the values above as text for display_flights to put on the screen
         # Short strings get placed on screen, then longer ones scroll over each in sequence
@@ -320,6 +359,7 @@ def parse_details_json():
         global label2_long
         global label3_short
         global label3_long
+        global label4_short
 
         label1_short=flight_number
         label1_long=airline_name
@@ -327,6 +367,7 @@ def parse_details_json():
         label2_long=airport_origin_name+"-"+airport_destination_name
         label3_short=aircraft_code
         label3_long=aircraft_model
+        label4_short=str(altitude)+"ft"
 
         if not label1_short:
             label1_short=''
@@ -340,6 +381,8 @@ def parse_details_json():
             label3_short=''
         if not label3_long:
             label3_long=''
+        if not label4_short:
+            label4_short=''
 
 
         # optional filter example - check things and return false if you want
@@ -353,8 +396,10 @@ def parse_details_json():
         print (e)
         return False
 
-
-    return True
+    if heading < 180:
+        return "left"
+    else:
+        return "right"
 
 
 def checkConnection():
@@ -386,6 +431,7 @@ def get_flights():
     try:
         #response = json.loads(matrixportal.fetch())
         response=requests.get(url=FLIGHT_SEARCH_URL,headers=rheaders).json()
+        print("Making request to "+FLIGHT_SEARCH_URL)
     except (RuntimeError,OSError, HttpError, ValueError, requests.OutOfRetries) as e:
         print(e.__class__.__name__+"--------------------------------------")
         print(e)
@@ -396,8 +442,11 @@ def get_flights():
         for flight_id, flight_info in response.items():
             # the JSON has three main fields, we want the one that's a flight ID
             if not (flight_id=="version" or flight_id=="full_count"):
-                if len(flight_info)>13:
+                if len(flight_info)>13 and flight_info[-1]:
                     return flight_id
+                else:
+                    print("Got flight info for likely helicopter:", flight_id)
+                    return False
     else:
         return False
 
@@ -414,36 +463,34 @@ while True:
 
     w.feed()
 
-    #print("memory free: " + str(gc.mem_free()))
+    print("memory free: " + str(gc.mem_free()))
 
-    #print("Get flights...")
+    print("Get flights...")
     flight_id=get_flights()
     w.feed()
-    
 
     if flight_id:
         if flight_id==last_flight:
-            print("Same flight found, so keep showing it")
+            print("Same flight found,", flight_id, ", so keep showing it")
         else:
             print("New flight "+flight_id+" found, clear display")
             clear_flight()
             if get_flight_details(flight_id):
                 w.feed()
                 gc.collect()
-                if parse_details_json():
+                trip_type = parse_details_json()
+                if trip_type:
                     gc.collect()
-                    plane_animation()
+                    plane_animation(trip_type=="right")
                     display_flight()
-                else:
-                    print("error parsing JSON, skip displaying this flight")
             else:
                 print("error loading details, skip displaying this flight")
-            
+
             last_flight=flight_id
     else:
         #print("No flights found, clear display")
         clear_flight()
-    
+
     time.sleep(5)
 
 
