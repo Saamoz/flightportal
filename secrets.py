@@ -6,5 +6,5 @@ secrets = {
     'password' : 'wifi password',
     # area to search for flights: top latitude, bottom latitude, left longitude, right longitude
     # (so this example is central London)
-    'bounds_box' : '51.6,51.4,-0.3,-0.1'
+    'bounds_box' : '41.9,41.86,-87.7,-87.56'
     }
