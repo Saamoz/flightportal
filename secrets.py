@@ -4,7 +4,7 @@
 secrets = {
     'ssid' : 'wifi network',
     'password' : 'wifi password',
+    'timezone' : "America/Chicago", # http://worldtimeapi.org/timezones]
     # area to search for flights: top latitude, bottom latitude, left longitude, right longitude
-    # (so this example is central London)
     'bounds_box' : '41.9,41.86,-87.7,-87.56'
     }
