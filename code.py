@@ -303,14 +303,14 @@ def parse_details_json():
 
         flight_number=long_json["identification"]["number"]["default"]
         flight_callsign=long_json["identification"]["callsign"]
-        
+
         if flight_number:
             print("Flight is called "+flight_number)
         else:
             print("No flight number, callsign is "+flight_callsign)
             print("No number for this flight. Skipping")
             return False
-                
+
         aircraft_code=long_json["aircraft"]["model"]["code"]
         aircraft_model=long_json["aircraft"]["model"]["text"]
         #aircraft_registration=long_json["aircraft"]["registration"]
@@ -342,7 +342,6 @@ def parse_details_json():
         #speed=long_json["trail"][0]["spd"]
         heading=long_json["trail"][0]["hd"]
 
-        altitude = 2500
         if altitude > 10000:
             altitude = str(round(altitude / 1000)) + 'k'
             label4.x = 32
@@ -396,7 +395,7 @@ def parse_details_json():
         print (e)
         return False
 
-    if heading < 180:
+    if heading > 180:
         return "left"
     else:
         return "right"
@@ -453,7 +452,6 @@ def get_flights():
 
 
 # Actual doing of things - loop forever quering fr24, processing any results and waiting to query again
-
 checkConnection()
 
 last_flight=''
